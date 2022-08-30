@@ -67,7 +67,7 @@ Each AIP should have the following parts:
 
 * Preamble -- RFC 822 style headers containing meta-data about the AIP, including the AIP number, a short descAIPtive title (limited to a maximum of 44 characters), the names, and optionally the contact info for each author, etc.
 
-* Abstract -- a short (~200 word) descAIPtion of the technical issue being addressed.
+* Abstract -- a short (~200 word) description of the technical issue being addressed.
 
 * Copyright/public domain -- Each AIP must either be explicitly labelled as placed in the public domain (see this AIP as an example) or licensed under the Open Publication License.
 
@@ -144,7 +144,7 @@ If you are interested in assuming ownership of a AIP, send a message asking to t
 
 ==AIP Editors==
 
-The current AIP editor is Tron who can be contacted at [[mailto:alamshafil@pm.me|alamshafil@pm.me]].
+The current AIP editor is Shafil who can be contacted at [[mailto:alamshafil@pm.me|alamshafil@pm.me]].
 
 ==AIP Editor Responsibilities & Workflow==
 
@@ -162,7 +162,7 @@ Once the AIP is ready for the repository it should be submitted as a "pull reque
 
 The AIP editor will:
 
-* Assign a AIP number (almost always just the next available number, but sometimes it's a special/joke number, like 666 or 3141) in the pull request comments.
+* Assign a AIP number (almost always just the next available number, but sometimes it's a special/joke number, like 69 or 420) in the pull request comments.
 
 * Merge the pull request when the author is ready (allowing some time for further peer review).
 

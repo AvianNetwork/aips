@@ -1,0 +1,48 @@
+<pre>
+  AIP: 2
+  Title: Crow dual algo system
+  Author: Shafil Alam <alamshafil@pm.me>
+  Comments-Summary: No comments yet.
+  Comments-URI: https://github.com/AvianNetwork/aips
+  Status: Final
+  Type: Standards
+  Created: 2022-08-29
+</pre>
+
+==Abstract==
+Implement a dual algo system called Crow that will allow two algorithms to work together.
+
+==Motivation==
+The original cryptocurrency, Bitcoin, started Proof of Work (PoW) using the SHA256
+hashing algorithm, but as projects have forked from Bitcoin, it also brought about the use
+of alternative algorithms. A common goal of these algorithms was to become
+ASIC-resistant due to the fact that highly efficient ASICs began to dominate SHA-256
+due to their simplicity, limiting the viability of decentralization through mining on
+consumer hardware. Cryptocurrencies like Dash took the initiative to chain multiple
+algorithms together, creating the family of X11 algorithms. It was proven to be ASIC
+resistant, but ASICs for X11 were still eventually developed by Chinese manufacturers.
+
+Another project, Ravencoin (RVN), noticed this and decided to design an ASIC-resistant
+algo based on the X11 series; they created the X16R algorithm. X16R had the same
+principle of chaining multiple algorithms together, but this time the order of the
+algorithms was randomized based on the last 8 bytes of the previous hash, contrasting
+with the sequential nature of previous chained implementations. Due to RVN’s early
+popularity, dedicated mining hardware was eventually developed for X16R, which,
+despite being highly inefficient, prompted Ravencoin to reverse their course and begin
+work on a memory-intensive ProgPow variant, temporarily moving to a modified
+algorithm called X16Rv2 while development was ongoing.
+
+A group of volunteers wanted to keep the original X16R chain alive and created a new
+cryptocurrency called Ravencoin Classic (RVC). Unfortunately, X16R and RVC were taken
+over by Chinese ASIC manufacturers who exploited RVC for profit. A supporter of RVC
+was upset by this and decided to fork RVC, making a new community-driven
+cryptocurrency utilizing the X16R algorithm; thus Ravencoin Lite (RVL) was born. The
+RVL project was faced with many of the same issues which plagued its predecessors and
+saw the use of dedicated hardware on the network. While the aging and already
+inefficient ASICs and FPGAs could barely compete with modern consumer GPUs in terms
+of the hashrate to power ratio, it still went against the decentralized community-driven
+spirit of the project. Realizing that, RVL performed an algo swap just 3 months into its
+life, rebranding to Avian Network (AVN) upon the activation of the new PoW system. AVN
+maintains the original visions of RVL and the projects that came before it by using the
+X16RT and MinotaurX mining algorithms (both direct derivatives of X16R) to allow both
+GPUs and CPUs to join the network.
