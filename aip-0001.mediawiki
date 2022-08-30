@@ -57,7 +57,7 @@ AIPs can also be superseded by a different AIP, rendering the original obsolete.
 
 The possible paths of the status of AIPs are as follows:
 
-<img src=AIP-0001/process.png></img>
+<img src=aip-0001/process.png></img>
 
 Some Informational and Process AIPs may also have a status of "Active" if they are never meant to be completed. E.g. AIP 1 (this AIP).
 
@@ -158,7 +158,7 @@ For each new AIP that comes in an editor does the following:
 
 If the AIP isn't ready, the editor will send it back to the author for revision, with specific instructions.
 
-Once the AIP is ready for the repository it should be submitted as a "pull request" to the [https://github.com/ravenwallet/AIPs] repository on GitHub where it may get further feedback.
+Once the AIP is ready for the repository it should be submitted as a "pull request" to the [https://github.com/AvianNetwork/aips] repository on GitHub where it may get further feedback.
 
 The AIP editor will:
 

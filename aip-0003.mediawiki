@@ -1,0 +1,51 @@
+<pre>
+  AIP: 3
+  Title: Avian Flight Plans (AFP)
+  Author: Shafil Alam <alamshafil@pm.me>
+  Comments-Summary: No comments yet.
+  Comments-URI: https://github.com/AvianNetwork/aips
+  Status: Final
+  Type: Standards
+  Created: 2022-08-29
+</pre>
+
+==Abstract==
+Create a blockchain scripting language to allow users users of the network to create assets and decide their purpose and
+rules independent of the protocol.
+
+==Motivation==
+With the development of Avian Flight Plans (AFP) will give developers a chance to build in automation and add utility to the network. 
+In order to allow websites, mobile applications, and desktop applications to make use of the
+Avian ecosystem, Avian Flight Plans will be in place to aid the developer. The use of
+assets will be available not only for the average user but also for the developers to
+harness. Executing flight plans require no fees of any kind and the only required fee is
+either performing a transaction or minting an asset.
+
+Other token standards like ERC20, ERC721, and ERC223 are built on Ethereum or other
+blockchains (EVM’S) that support smart contracts. Different problems exist when using
+these smart contracts. Since the Ethereum network does not natively recognize these
+smart contract tokens, it is currently unable to protect against some common problems.
+Smart contracts can be confusing for users as there can be multiple ERC20 tokens with
+identical names. The only distinction between contracts with identical names is the
+contract hash.
+
+The solution is to create a bitcoin-like system that is fully asset aware. A system being
+asset aware provides two major advantages. It allows the client and RPC commands
+to protect the asset from being destroyed accidentally. An alternative to the "smart contract" system will be in
+place to support the automation of assets.
+
+Flight plans allows the user to design their
+own protocol according to their needs, allowing further control over assets.
+Assets themselves alone can be transferred, minted, etc. We want to further unlock the
+capabilities of assets by developing a blockchain scripting system to allow developers to have
+greater control and automation over assets. Although RPC commands exist for token
+management, a scripting language will allow more control and help with readability as
+opposed to using multiple RPC methods.
+
+==Specification==
+Using Lua as a scripting language will allow us to embed it in C++ which means we can
+easily connect our RPC and other functions to it easily.
+
+<img src=aip-0002/specification.png></img>
+
+<img src=aip-0002/implementation.png></img>
