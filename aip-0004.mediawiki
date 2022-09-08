@@ -25,7 +25,7 @@ The ANS system requires multiple specifications to work efficiently.
 In order to efficiently store data within the 64 character limit, a standardized system will be in place to express addresses, IPs, etc. in the shortest manner possible.
 
 * ''(Prefix)'' An ANS ID will be less than or equal to 64 characters and will start with unique character to distinguish it from IPFS hash or TXID. 
-** It is proposed to start a ANS ID with "ANS" or something related. It recommended that this prefix is less than 3 characters to allow more data to be stored within the 64 character limit.
+** It is proposed to start an ANS ID with "ANS". It is recommended that this prefix is less than 3 characters to allow more data to be stored within the 64 character limit.
 * ''(Type)'' An single hex value from 0-F will determine the type of ANS ID. This will make it easy to quickly get the type of data stored in the ANS ID.
 ** 0 = Avian address
 ** 1 = IP address (DNS A record)
@@ -33,7 +33,7 @@ In order to efficiently store data within the 64 character limit, a standardized
 ** Address = RXBurnXXXXXXXXXXXXXXXXXXXXXXWUo9FV
 ** IP = 7f000001 (127.0.0.1)
 
-Using IP in hex format is compact and efficient. IPv4 address can go up to 255, which is 0xFF in hex; since IPv4 address has 4 parts means that 8 characters are needed (ff ff ff ff).
+Using the IP address in hex format is compact and efficient. IPv4 address can go up to 255 in decimal, which is 0xFF in hex. Since IPv4 address have four octets, only 8 ''(4*2)'' characters are needed (ff-ff-ff-ff).
 
 Base58 address can have 26 to 36 characters which will fit in our 64 character limit. 3 char ''(prefix)'' + 1 char ''(type hex)'' + 36 char ''(address)'' = 40 characters which is <= 64 characters limit.
 
@@ -42,10 +42,10 @@ Examples
 * ANS17f000001 (ip)
 
 ===Extra metadata===
-When creating an asset the user has the option to add both an IPFS hash or ANS data together. 
-This IPFS hash can link to extra metadata related to the ANS data, such as an address for other cryptocurrency, social infomation, etc.
+When creating an asset, the user has the option to add both an IPFS hash or ANS data together. 
+The IPFS hash can link to extra metadata related to the ANS data, such as an address for another cryptocurrency, social media handle, etc.
 The IPFS data can be a JSON file with a special identifier, although this identifier will not be standardized by this AIP. 
-It is recommended to use something like "hasANS" or "isANS" for external services to easily find extra ANS metadata.
+It is recommended to use something like ''"hasANS"'' or ''"isANS"'' for external services to easily find extra ANS metadata.
 
 ===RPC===
 It it proposed to create helper RPC methods for encoding and decoding ANS IDs.
