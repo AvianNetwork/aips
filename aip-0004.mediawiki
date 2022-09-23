@@ -80,6 +80,9 @@ This will cause all blocks with asset data to become invalid and lead to consens
 ===Electrum wallet===
 It can be optional to implement into the Electrum wallet ''(given that these changes do not affect the current wallet).''
 
+==Diagram==
+<img src=aip-0004/ANS.png></img>
+
 ==Copyright/public domain==
 This document is hereby placed in the public domain. 
 
