@@ -79,7 +79,7 @@ OP_ENDIF
 Each supported external chain has a consensus‑level anchor (height+hash). Nodes MUST verify that the first provided header links to the anchor. Anchors are set per release and may be updated periodically.
 
 == Deployment ==
-* VersionBits: use bit '''27''' (bit 28 reserved for dual‑algo 0=X16RT / 1=MinotaurX).
+* VersionBits: use bit '''28''' (bit 27 reserved for dual‑algo 0=X16RT / 1=MinotaurX).
 * Threshold: 90% over a 2016‑block window; activation per BIP9‑style state machine.
 * Standardness: proofs preferred in witness data (P2WSH) with policy caps noted above.
 
