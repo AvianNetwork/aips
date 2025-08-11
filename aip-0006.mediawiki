@@ -8,7 +8,7 @@
 ; Discussions‑To: https://github.com/AvianNetwork/aips
 
 == Abstract ==
-This AIP upgrades FlightLock to a consensus feature by introducing a new opcode, <code>OP_CHECKTOTP</code>, that verifies RFC‑6238 TOTP codes on‑chain using Median‑Time‑Past (MTP) as the time base. It enables P2SH/P2WSH scripts that require a valid authenticator app code plus a signature to spend cold‑storage UTXOs.
+This AIP introduces FlightLock, a consensus feature by introducing a new opcode, <code>OP_CHECKTOTP</code>, that verifies RFC‑6238 TOTP codes on‑chain using Median‑Time‑Past (MTP) as the time base. It enables P2SH/P2WSH scripts that require a valid authenticator app code plus a signature to spend cold‑storage UTXOs.
 
 == Motivation ==
 Cold‑storage spends are planned and infrequent. Requiring a TOTP code from an offline device adds a strong second factor without any server. Doing the validation in Script removes trust in wallet software and prevents bypass via off‑chain mistakes.
