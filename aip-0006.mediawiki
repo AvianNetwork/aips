@@ -7,78 +7,76 @@
 ; License: BSD‑2‑Clause
 ; Discussions‑To: https://github.com/AvianNetwork/aips
 
-== Abstract === AIP-0006: FlightLock — On‑Chain TOTP Verification (OP_CHECKTOTP) for Avian =
-
-; Author(s): <your-name>, Craig Donnachie (editor)
-; Status: Draft
-; Type: Consensus (soft fork)
-; Created: 2025‑08‑11
-; License: BSD‑2‑Clause
-; Discussions‑To: https://github.com/AvianNetwork/aips
-
 == Abstract ==
-This AIP upgrades FlightLock to a consensus feature by introducing a new opcode, OP_CHECKTOTP, that verifies RFC‑6238 TOTP codes on‑chain using Median‑Time‑Past (MTP) as the time base. It enables P2SH/P2WSH scripts that require a valid authenticator app code plus a signature to spend cold‑storage UTXOs.
+This AIP upgrades FlightLock to a consensus feature by introducing a new opcode, <code>OP_CHECKTOTP</code>, that verifies RFC‑6238 TOTP codes on‑chain using Median‑Time‑Past (MTP) as the time base. It enables P2SH/P2WSH scripts that require a valid authenticator app code plus a signature to spend cold‑storage UTXOs.
 
 == Motivation ==
 Cold‑storage spends are planned and infrequent. Requiring a TOTP code from an offline device adds a strong second factor without any server. Doing the validation in Script removes trust in wallet software and prevents bypass via off‑chain mistakes.
 
 == HOTP vs TOTP ==
-**HOTP** (HMAC‑based One‑Time Password, RFC 4226) generates codes from a shared secret `K` and an incrementing counter `C`:
-```
+'''HOTP''' (HMAC‑based One‑Time Password, RFC 4226) generates codes from a shared secret <code>K</code> and an incrementing counter <code>C</code>:
+
+<syntaxhighlight lang="text">
 HOTP(K, C) = Truncate( HMAC(K, C) ) mod 10^digits
-```
+</syntaxhighlight>
+
 The counter increments for each new code. Validation requires the verifier to track and synchronize the counter.
 
-**TOTP** (Time‑based One‑Time Password, RFC 6238) is built on HOTP but uses time to derive the counter:
-```
+'''TOTP''' (Time‑based One‑Time Password, RFC 6238) is built on HOTP but uses time to derive the counter:
+
+<syntaxhighlight lang="text">
 T = floor( (current_time − T0) / step )
 TOTP(K) = HOTP(K, T)
-```
-This removes the need to store counters; both sides just need reasonably synchronized clocks. OP_CHECKTOTP computes HOTP with a time‑derived counter using the blockchain’s MTP.
+</syntaxhighlight>
+
+This removes the need to store counters; both sides just need reasonably synchronized clocks. <code>OP_CHECKTOTP</code> computes HOTP with a time‑derived counter using the blockchain’s MTP.
 
 == Specification ==
 
 === New Opcode: OP_CHECKTOTP ===
-**Stack before (top → bottom):**
-```
+'''Stack before (top → bottom):'''
+<syntaxhighlight lang="text">
 <K_i> <code> <hashK_i> <t0> <step> <digits> <skew> <algo>
-```
+</syntaxhighlight>
+
 Where:
-- `K_i` = per‑UTXO TOTP key (raw bytes)
-- `code` = integer from authenticator app
-- `hashK_i` = SHA256(K_i) committed in script
-- `t0, step, digits, skew, algo` = minimally‑encoded integers
+* <code>K_i</code> = per‑UTXO TOTP key (raw bytes)
+* <code>code</code> = integer from authenticator app
+* <code>hashK_i</code> = SHA256(K_i) committed in script
+* <code>t0, step, digits, skew, algo</code> = minimally‑encoded integers
 
-**Operation:**
-1. **Key binding:** require `SHA256(K_i) == hashK_i`.
-2. **Time source:** compute epoch index `T = floor((MTP(parent_of_spend_block) − t0) / step)` where MTP is the Median‑Time‑Past of the parent block (BIP113‑style).
-3. **Window:** for `w ∈ {−skew … +skew}`, compute code `C_w` per RFC‑6238 (HOTP truncate) with HMAC(`algo`, `K_i`, `T+w`) and accept if any match.
-4. **Result:** push `1` on success, else `0`.
+'''Operation:'''
 
-Fail if `digits`/`step`/`skew`/`algo` are out of bounds or if any pop/parse step underflows the stack.
+# '''Key binding:''' require <code>SHA256(K_i) == hashK_i</code>.
+# '''Time source:''' compute epoch index <code>T = floor((MTP(parent_of_spend_block) − t0) / step)</code> where MTP is the Median‑Time‑Past of the parent block (BIP113‑style).
+# '''Window:''' for <code>w ∈ {−skew … +skew}</code>, compute code <code>C_w</code> per RFC‑6238 (HOTP truncate) with HMAC(<code>algo</code>, <code>K_i</code>, <code>T+w</code>) and accept if any match.
+# '''Result:''' push <code>1</code> on success, else <code>0</code>.
 
-**Argument bounds / policy:**
-- `digits ∈ {6,8}`
-- `step ∈ [15,120]` seconds
-- `skew ≤ 1`
-- `algo ∈ {0=HMAC‑SHA1, 1=HMAC‑SHA256, 2=HMAC‑SHA512}`
+Fail if <code>digits</code>/<code>step</code>/<code>skew</code>/<code>algo</code> are out of bounds or if any pop/parse step underflows the stack.
+
+'''Argument bounds / policy:'''
+
+* <code>digits ∈ {6,8}</code>
+* <code>step ∈ [15,120]</code> seconds
+* <code>skew ≤ 1</code>
+* <code>algo ∈ {0=HMAC‑SHA1, 1=HMAC‑SHA256, 2=HMAC‑SHA512}</code>
 
 Transactions are non‑standard if arguments are outside these bounds. Standard relay requires spend in P2WSH; non‑segwit spends may be non‑standard if witness/script size is large.
 
 === Script Templates ===
 
 ; 2‑factor single‑sig
-```
+<syntaxhighlight lang="text">
 OP_SHA256 <hashK_i> OP_SWAP OP_SWAP
 <t0> <step> <digits> <skew> <algo>
 OP_CHECKTOTP OP_VERIFY
 OP_DUP OP_HASH160 <RecipientPKH> OP_EQUALVERIFY
 OP_CHECKSIG
-```
-Spend stack: `<sig> <pubkey> <K_i> <code>`
+</syntaxhighlight>
+Spend stack: <code>&lt;sig&gt; &lt;pubkey&gt; &lt;K_i&gt; &lt;code&gt;</code>
 
 ; With timeout recovery
-```
+<syntaxhighlight lang="text">
 OP_IF
   OP_SHA256 <hashK_i> OP_SWAP OP_SWAP
   <t0> <step> <digits> <skew> <algo>
@@ -88,130 +86,33 @@ OP_ELSE
   <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP
   OP_DUP OP_HASH160 <RecoveryPKH> OP_EQUALVERIFY OP_CHECKSIG
 OP_ENDIF
-```
+</syntaxhighlight>
 
 === Key Hygiene ===
-Wallets MUST NOT reuse `K_i`. Revealing `K_i` on spend is expected. Derive a unique `K_i` per UTXO from a master secret `K_master`:
-```
+Wallets MUST NOT reuse <code>K_i</code>. Revealing <code>K_i</code> on spend is expected. Derive a unique <code>K_i</code> per UTXO from a master secret <code>K_master</code>:
+
+<syntaxhighlight lang="text">
 K_i = HKDF‑SHA256(IKM = K_master,
                   info = "FlightLock" || outpoint || scriptHash,
                   L = 20 or 32)  # 20 for SHA1, 32 for SHA256/512
-```
-Wallets should present a QR for `K_i` compatible with standard authenticator apps.
+</syntaxhighlight>
+
+Wallets should present a QR for <code>K_i</code> compatible with standard authenticator apps.
 
 == Deployment ==
-- **VersionBits:** use bit 26 (bit 27 = dual‑algo; bit 28 = FlightPath SPV)
-- **Threshold:** 90% over a 2016‑block window
-- **Activation:** BIP9‑style state machine
+* '''VersionBits:''' use bit 26 (bit 27 = dual‑algo; bit 28 = FlightPath SPV)
+* '''Threshold:''' 90% over a 2016‑block window
+* '''Activation:''' BIP9‑style state machine
 
 == Security Considerations ==
-- **Miner influence:** using MTP(parent) limits single‑miner clock control.
-- **Replay/guessing:** 6/8‑digit window with `skew ≤ 1` and per‑UTXO keys make brute force infeasible; signature required.
-- **Key reuse:** must derive unique `K_i` per UTXO to avoid cross‑UTXO compromise.
-- **Loss of authenticator:** recovery path with CLTV is recommended.
+* '''Miner influence:''' using MTP(parent) limits single‑miner clock control.
+* '''Replay/guessing:''' 6/8‑digit window with <code>skew ≤ 1</code> and per‑UTXO keys make brute force infeasible; signature required.
+* '''Key reuse:''' must derive unique <code>K_i</code> per UTXO to avoid cross‑UTXO compromise.
+* '''Loss of authenticator:''' recovery path with CLTV is recommended.
 
 == Reference Implementation Notes ==
-- Interpreter: implement constant‑time HMAC for SHA1/256/512 and HOTP truncate; expose parent block MTP to Script.
-- Tests: RFC‑6238 vectors (SHA1/256/512, step=30, digits=6), window edge cases, invalid parameters, policy enforcement, segwit/non‑segwit spends.
-
-== Backwards Compatibility ==
-Soft fork: older nodes remain compatible; upgraded miners enforce opcode rules.
-
-== Diagram ==
-[[File:aip-0006/flightlock_diagram.png|center|700px]]
-
-----
-''End of AIP‑0006''
-
-This AIP upgrades FlightLock to a consensus feature by introducing a new opcode, OP_CHECKTOTP, that verifies RFC‑6238 TOTP codes on‑chain using Median‑Time‑Past (MTP) as the time base. It enables P2SH/P2WSH scripts that require a valid authenticator app code plus a signature to spend cold‑storage UTXOs.
-
-== Motivation ==
-Cold‑storage spends are planned and infrequent. Requiring a TOTP code from an offline device adds a strong second factor without any server. Doing the validation in Script removes trust in wallet software and prevents bypass via off‑chain mistakes.
-
-== HOTP vs TOTP ==
-**HOTP** (HMAC‑based One‑Time Password, RFC 4226) generates codes from a shared secret `K` and an incrementing counter `C`:
-```
-HOTP(K, C) = Truncate( HMAC(K, C) ) mod 10^digits
-```
-The counter increments for each new code. Validation requires the verifier to track and synchronize the counter.
-
-**TOTP** (Time‑based One‑Time Password, RFC 6238) is built on HOTP but uses time to derive the counter:
-```
-T = floor( (current_time − T0) / step )
-TOTP(K) = HOTP(K, T)
-```
-This removes the need to store counters; both sides just need reasonably synchronized clocks. In OP_CHECKTOTP, `T` is derived from the blockchain’s MTP.
-
-== Specification ==
-
-=== New Opcode: OP_CHECKTOTP ===
-**Stack before (top → bottom):**
-```
-<K_i> <code> <hashK_i> <t0> <step> <digits> <skew> <algo>
-```
-
-**Operation:**
-1. **Key binding:** require `SHA256(K_i) == hashK_i`.
-2. **Time source:** compute epoch index `T = floor((MTP(parent_of_spend_block) − t0) / step)`.
-3. **Window:** for `w ∈ {−skew … +skew}`, compute code `C_w` per RFC‑6238 (HOTP truncate) with HMAC(`algo`, `K_i`, `T+w`) and accept if any match.
-4. **Result:** push `1` on success, else `0`.
-
-**Argument bounds / policy:**
-- `digits ∈ {6,8}`
-- `step ∈ [15,120]` seconds
-- `skew ≤ 1`
-- `algo ∈ {0=HMAC‑SHA1, 1=HMAC‑SHA256, 2=HMAC‑SHA512}`
-
-Transactions are non‑standard if arguments are outside these bounds. P2WSH is preferred for large scripts.
-
-=== Script Templates ===
-
-; 2‑factor single‑sig
-```
-OP_SHA256 <hashK_i> OP_SWAP OP_SWAP
-<t0> <step> <digits> <skew> <algo>
-OP_CHECKTOTP OP_VERIFY
-OP_DUP OP_HASH160 <RecipientPKH> OP_EQUALVERIFY
-OP_CHECKSIG
-```
-Spend stack: `<sig> <pubkey> <K_i> <code>`
-
-; With timeout recovery
-```
-OP_IF
-  OP_SHA256 <hashK_i> OP_SWAP OP_SWAP
-  <t0> <step> <digits> <skew> <algo>
-  OP_CHECKTOTP OP_VERIFY
-  OP_DUP OP_HASH160 <RecipientPKH> OP_EQUALVERIFY OP_CHECKSIG
-OP_ELSE
-  <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP
-  OP_DUP OP_HASH160 <RecoveryPKH> OP_EQUALVERIFY OP_CHECKSIG
-OP_ENDIF
-```
-
-=== Key Hygiene ===
-Revealing `K_i` on spend is expected. Derive a unique `K_i` per UTXO from a master secret `K_master`:
-```
-K_i = HKDF‑SHA256(IKM = K_master,
-                  info = "FlightLock" || outpoint || scriptHash,
-                  L = 20 or 32)  # 20 for SHA1, 32 for SHA256/512
-```
-Wallets should present a QR for `K_i` compatible with standard authenticator apps.
-
-== Deployment ==
-- **VersionBits:** use bit 26 (bit 27 = dual‑algo; bit 28 = FlightPath SPV)
-- **Threshold:** 90% over a 2016‑block window
-- **Activation:** BIP9‑style state machine
-
-== Security Considerations ==
-- **Miner influence:** using MTP(parent) limits single‑miner clock control.
-- **Replay/guessing:** 6/8‑digit window with `skew ≤ 1` and per‑UTXO keys make brute force infeasible; signature required.
-- **Key reuse:** must derive unique `K_i` per UTXO to avoid cross‑UTXO compromise.
-- **Loss of authenticator:** recovery path with CLTV is recommended.
-
-== Reference Implementation Notes ==
-- Interpreter: implement constant‑time HMAC for SHA1/256/512 and HOTP truncate; expose parent block MTP to Script.
-- Tests: RFC‑6238 vectors, window edge cases, invalid parameters, policy enforcement, segwit/non‑segwit spends.
+* Interpreter: implement constant‑time HMAC for SHA1/256/512 and HOTP truncate; expose parent block MTP to Script.
+* Tests: RFC‑6238 vectors (SHA1/256/512, step=30, digits=6), window edge cases, invalid parameters, policy enforcement, segwit/non‑segwit spends.
 
 == Backwards Compatibility ==
 Soft fork: older nodes remain compatible; upgraded miners enforce opcode rules.
