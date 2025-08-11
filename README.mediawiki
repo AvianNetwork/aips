@@ -42,4 +42,12 @@ Those proposing changes should consider that ultimately consent may rest with th
 | Shafil Alam
 | Standards
 | Draft
+|-
+| [[aip-0005.mediawiki|5]]
+| Applications
+| Avian FlightPath — Trustless Multi‑Chain SPV Verification
+| Craig Donnachie
+| Standards
+| Draft
+|
 |}

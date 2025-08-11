@@ -1,0 +1,125 @@
+= AIP-0005: FlightPath — Trustless Multi‑Chain SPV Verification for Avian =
+
+; Author: Craig Donnachie craig.donnachie@gmail.com
+; Status: Draft
+; Type: Consensus (soft fork)
+; Created: 2025‑08‑10
+; License: BSD‑2‑Clause
+; Discussions‑To: https://github.com/AvianNetwork/aips
+
+== Abstract ==
+FlightPath adds new Avian Script opcodes that enable on‑chain Simple Payment Verification (SPV) of transactions from external UTXO blockchains. With these opcodes, an Avian contract can trustlessly verify that a transaction on another chain (BTC/LTC/BCH/DOGE/RVN/EVR) paid an exact amount to an exact script and release AVN accordingly. This AIP covers **trustless** methods only (SPV/HTLC); custodian flows are out‑of‑scope.
+
+== Motivation ==
+Avian currently supports HTLC‐style swaps but cannot validate external‑chain payments in‑script. FlightPath enables asymmetric, one‑contract swaps (e.g., BTC→AVN) where Avian verifies the external payment directly. This reduces coordination and expands interoperability without relying on third parties.
+
+== Specification ==
+=== New Opcodes ===
+* '''OP_CHECKCHAINHEADERS'''
+: ''Stack (top → bottom):'' <code>headers_blob</code> · <code>min_height</code> · <code>min_chainwork</code> · <code>chain_tag</code>
+: ''Semantics:''
+:# Parse <code>headers_blob</code> as contiguous 80‑byte headers.
+:# Verify PoW per <code>chain_tag</code> (target from nBits), and header linkage from the chain’s consensus '''anchor''' (height+hash) compiled into Avian.
+:# Accumulate chainwork; require <code>≥ min_chainwork</code> and tip height <code>≥ min_height</code>.
+:# Push tip merkle root (32B) then tip block hash (32B).
+: ''Policy limits:'' max headers relayed 160 KiB; window caps MAY vary by chain.
+
+* '''OP_MERKLEVERIFY'''
+: ''Stack:'' <code>txid</code> · <code>merkle_root</code> · <code>branch_blob</code> · <code>leaf_index</code>
+: Recompute the merkle path using Bitcoin‐style double‑SHA256; push 1 on success, 0 otherwise. Policy: ≤32 siblings.
+
+* '''OP_CHECKBTCTXOUT'''
+: ''Stack:'' <code>raw_tx</code> · <code>vout_index</code> · <code>expected_amount</code> · <code>expected_scriptpubkey</code>
+: Minimally parse <code>raw_tx</code>; require output <code>vout_index</code> matches amount and scriptPubKey bytes; push 1/0. Policy: ≤200 KiB tx.
+
+* (Optional) '''OP_CHECKAUXPOW'''
+: For AuxPoW chains (e.g., DOGE), validates linkage from the parent chain coinbase to the child merkle root (coinbase contains child merkle & chain‑id), including merkle‑of‑merkle path.
+
+=== Chain Tags ===
+{| class="wikitable"
+! Tag !! Chain !! PoW !! Difficulty/DAA !! Stage
+|-
+| 1 || BTC || SHA256d || Bitcoin DAA || 0
+|-
+| 2 || LTC || Scrypt || Litecoin DAA || 1
+|-
+| 3 || BCH || SHA256d || BCH DAA || 1
+|-
+| 4 || DOGE || Scrypt + AuxPoW || Digishield || 2
+|-
+| 5 || RVN || KAWPOW || RVN DAA || 3
+|-
+| 6 || EVR || KAWPOW || EVR DAA || 3
+|}
+
+=== Script Template (External→AVN success path) ===
+The redeem script releases AVN if the external chain payment is proven; otherwise, sender can refund after timeout.
+
+<pre>
+OP_IF
+  # Stack before:
+  # raw_tx vout expected_amount expected_spk
+  # txid branch_blob leaf_index
+  # headers_blob min_height min_chainwork chain_tag
+  OP_CHECKCHAINHEADERS      # → tip_merkle_root tip_block_hash
+  OP_SWAP OP_DROP           # keep merkle_root
+  OP_MERKLEVERIFY OP_VERIFY
+  OP_CHECKBTCTXOUT OP_VERIFY
+  OP_SHA256 <swap_id> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <RecipientPKH> OP_EQUALVERIFY
+  OP_CHECKSIG
+OP_ELSE
+  <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  OP_DUP OP_HASH160 <SenderPKH> OP_EQUALVERIFY
+  OP_CHECKSIG
+OP_ENDIF
+</pre>
+
+=== Anchors ===
+Each supported external chain has a consensus‑level anchor (height+hash). Nodes MUST verify that the first provided header links to the anchor. Anchors are set per release and may be updated periodically.
+
+== Deployment ==
+* VersionBits: use bit '''27''' (bit 28 reserved for dual‑algo 0=X16RT / 1=MinotaurX).
+* Threshold: 90% over a 2016‑block window; activation per BIP9‑style state machine.
+* Standardness: proofs preferred in witness data (P2WSH) with policy caps noted above.
+
+== Security Considerations ==
+* Anchors prevent validating adversarial alt‑forks.
+* Proof size limits and strict parsing mitigate DoS.
+* Callers should include ≥6 confirmations (or chain‑appropriate equivalents) in provided headers.
+* Exact amount and scriptPubKey matching prevents redirect attacks.
+
+== Rationale ==
+A small, purpose‑built opcode set gives Avian trustless inbound swaps from multiple UTXO chains, aligns with FlightDeck (wallet) and FlightPlans (contracts), and avoids general‑purpose string ops.
+
+== Staged Rollout Plan ==
+; Phase 1 — LTC & BCH
+: Implement LTC (scrypt) and BCH (sha256d) header/DAA rules and anchors.
+; Phase 2 — DOGE (AuxPoW)
+: Add AuxPoW verification (parent LTC headers, coinbase proof, merkle‑of‑merkle path) via OP_CHECKAUXPOW or chain‑specific branch inside OP_CHECKCHAINHEADERS.
+; Phase 3 — RVN & EVR (KAWPOW)
+: Bounded KAWPOW header verification (compact‑target check), chain‑specific DAAs, faster‑block policy adjustments.
+
+== Reference Implementation Notes ==
+* Consensus params: add <code>ExtChainTag</code>, <code>PowAlgo</code>, and per‑chain anchors in <code>Params</code>.
+* Interpreter: implement opcode cases; compute chainwork; reuse existing SHA256 primitives; add scrypt and bounded KAWPOW checks.
+* Policy: constants for max headers/branch/tx sizes; miners may enforce stricter relay.
+
+== Appendix A: Anchor Selection ==
+Use each chain’s CLI to pick a recent, stable anchor and record height+hash:
+<pre>
+bitcoin-cli   getblockhash <H_BTC>
+litecoin-cli  getblockhash <H_LTC>
+ravend-cli    getblockhash <H_RVN>
+evrmore-cli   getblockhash <H_EVR>
+bitcoin-cli   getblockcount  (to choose age)
+</pre>
+
+== Appendix B: C++ Stubs ==
+Include enums (<code>ExtChainTag</code>, <code>PowAlgo</code>), <code>ExtChainParams</code>, and a helper <code>EvalCheckChainHeaders(...)</code> wired into <code>OP_CHECKCHAINHEADERS</code>; optional <code>OP_CHECKAUXPOW</code> verifier for DOGE.
+
+== Diagram ==
+[[File:aip-0005/flightpath_trustless.png|center|700px]]
+
+----
+''End of AIP‑0005''
