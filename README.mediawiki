@@ -42,12 +42,25 @@ Those proposing changes should consider that ultimately consent may rest with th
 | Shafil Alam
 | Standards
 | Draft
-|-
+|- style="background-color: #cfffcf"
 | [[aip-0005.mediawiki|5]]
-| Applications
+| Consensus (soft fork)
 | Avian FlightPath — Trustless Multi‑Chain SPV Verification
 | Craig Donnachie
-| Standards
+| Consensus
 | Draft
-|
+|-
+| [[aip-0006.mediawiki|6]]
+| Consensus (soft fork)
+| Avian FlightLock — On‑Chain TOTP Verification
+| Craig Donnachie
+| Consensus
+| Draft
+|-
+| [[aip-0007.mediawiki|7]]
+| Consensus (hard fork)
+| Avian FlightDAG — Introduce GHOSTDAG-style Consensus
+| Craig Donnachie
+| Consensus
+| Draft
 |}

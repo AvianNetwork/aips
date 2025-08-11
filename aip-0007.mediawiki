@@ -1,0 +1,145 @@
+= AIP-0007: FlightDAG — Introduce GHOSTDAG-style Consensus to Avian Network =
+
+; AIP: 0007
+; Title: FlightDAG — Introduce GHOSTDAG-style Consensus to Avian Network
+; Author: Craig Donnachie (proposer), Avian Core contributors
+; Status: Draft
+; Type: Consensus (hard fork)
+; Category: Consensus, Mining, Networking
+; Created: 2025-08-11
+; Requires: AIP-0001 (process)
+; Replaces: —
+; License: CC0-1.0
+
+== Abstract ==
+This AIP proposes migrating Avian Network’s chain selection from longest-chain to a GHOSTDAG-style protocol (inspired by Kaspa) that orders a block DAG (Directed Acyclic Graph) by a notion of “blue” blocks and their accumulated work. The goal is to increase throughput and orphan resistance while preserving Avian’s dual‑PoW identity and emission schedule. The change requires new consensus rules, block header fields, P2P messages, and activation logic.
+
+== Motivation ==
+* **Lower orphan/stale rate** at higher block production, improving security-per-second.
+* **Better bandwidth/latency tolerance**: miners in distant regions can contribute without disproportionate orphan risk.
+* **Headroom for future features** (e.g., faster confirmations, high-frequency micro‑payments) while maintaining PoW and Avian’s economics.
+* **Remain competitive** with modern PoW designs that leverage DAG ordering and block‑mass heuristics.
+
+== Definitions ==
+* **DAG:** Graph of blocks with edges from child to every known parent.
+* **k‑cluster / flock set:** The maximal set of blocks within the DAG whose pairwise distances obey a bounded anticone parameter _k_. Intuitively, “honest main” blocks.
+* **Selected Parent (SP):** Among a block’s parents, the one with the highest blue score (tie-broken deterministically).
+* **Blue Score (BS):** Cumulative measure of blue work reachable from a block, used to order the DAG.
+* **Blue Work (BW):** Work metric accumulated over the flock set (analogue to cumulative work).
+* **Merge Set:** The set of blocks added when moving SP forward.
+
+== Specification ==
+
+=== High-level design ===
+Avian adopts a GHOSTDAG-style ordering with parameter _k_ and total order induced by (BlueScore, BlueWork, Hash). Mining continues to produce blocks referencing one or more parents (≥1). Nodes maintain the DAG, compute flock sets, and expose a linearized “Virtual Chain” tip for wallets and RPCs.
+
+=== Consensus parameters (initial proposal) ===
+; Anticone bound (k): 18 (Conservative default; tune on testnet)
+; Target inter-block time (τ): 10 s (aggregate across both algos; tune on testnet)
+; Finality depth (F): 200 virtual blocks (subject to measurement)
+; Max parents per block: 10
+; Max block size: unchanged (tune later if required)
+; DAA window: 2,000 blocks (virtual ordering)
+; Difficulty target: retarget by DAG-aware DAA over virtual order
+; Pruning horizon: 2^20 blocks (testnet first; mainnet later)
+
+_Note:_ τ here refers to *aggregate* DAG rate. Avian remains dual‑algo; see below.
+
+=== Block header changes ===
+Add the following fields to the block header (version bump required). These fields are consensus‑critical and must be covered by the block header hash:
+# **parentCount (varint)** — number of parent hashes (≥1).
+# **parentHashes[] (32‑byte each)** — ordered list of parents; the first is a miner‑hinted preferred parent.
+# **blueScore (uint64)** — cumulative blue score up to and including this block.
+# **blueWork (uint256)** — cumulative PoW over the flock set (big‑endian).
+# **daaScore (uint64)** — index in virtual order for DAA computations.
+# **pruningPoint (32‑byte)** — hash of current pruning point anchor (optional in Phase 1; mandatory in Phase 2).
+# **algoId (uint8)** — identifier of the PoW algorithm used (e.g., 0 = X16RT, 1 = MinotaurX).
+
+The existing fields (version, prevBlock, merkleRoot(s), time, nBits, nonce) remain. `prevBlock` is retained for backwards tooling but need not be a strict chain parent; it SHOULD match the miner’s selected parent when possible.
+
+=== Transaction and Merkle commitments ===
+Unchanged in Phase 1. Optionally, commit to **merge‑set hash** and **ghostdag data hash** in the coinbase witness/reserved field for auditability without expanding the header further (non‑consensus in Phase 1; may become consensus in Phase 2).
+
+=== Difficulty / DAA ===
+Replace chain‑height DAA with a **DAG‑aware DAA** over the virtual order:
+* Maintain a rolling window of size _W_ virtual blocks (e.g., 2,000).
+* For each new virtual tip, compute actual timespan vs. expected (W·τ) and adjust difficulty target using bounded, monotone updates.
+* Aggregate work considers all blue‑set contributions, not only the selected-parent path.
+
+=== Dual‑PoW integration ===
+* `algoId` binds the PoW to the header.
+* Targets may be **joint** (single target shared across algos with per‑algo normalizers) or **per‑algo** (distinct nBits per algo). Initial proposal: **per‑algo targets** with a common DAA regulator acting on *virtual* rate.
+* Coinbase must record `algoId` for explorer/miner accounting.
+* Both algos produce blocks into the same DAG. Uncle/side blocks are naturally integrated via GHOSTDAG ordering.
+
+=== Validation rules (simplified) ===
+# Header PoW valid for the given `algoId` and `nBits`.
+# All parents exist and timestamps are sane (median‑of‑parents + drift guard).
+# GhostDAG calculation places the block and derives (blueScore, blueWork) deterministically.
+# The block’s declared (blueScore, blueWork) must match locally computed values.
+# Virtual order updates exactly once per accepted block set; ties broken lexicographically by (blueWork, hash).
+# DAA target for the block matches computed target at its `daaScore` position.
+# Pruning rules (once enabled) forbid references older than the pruning point.
+# Standard tx, scripts, and mempool rules remain unchanged.
+
+=== P2P protocol ===
+New/updated messages (compactly encoded):
+* `inv-dag-parents` / `getparents`: advertise and request parent sets.
+* `ghostdag-data`: compact flock set deltas, merge‑set, and ordering hints.
+* `ibd-dag-sync`: initial block download via selected‑parent backbone + blue-set hydration.
+Backward compatibility: legacy `inv`/`getdata` continue to function for SP backbone; nodes advertise capability bit `NODE_GHOSTDAG`.
+
+=== Mining ===
+* Miners select a parent set consisting of the current virtual tip plus up to (MaxParents−1) recent blocks in its anticone to maximize probability of being in the flock set.
+* Templates expose `algoId`, parent set, and target. Stratum updates include parent set diffs.
+* Fee & subsidy rules remain unchanged.
+
+=== Activation ===
+* **Deployment:** Versionbits (bit TBD) with three states: defined → started → locked‑in → active.
+* **Grace period:** Nodes entering `started` enforce header extensions but accept chain ordering by longest‑chain until `active` (compatibility window).
+* **Testnet phases:** 
+  * Phase A: Header extensions + multi‑parent mining on testnet.
+  * Phase B: Full GHOSTDAG ordering + DAA on testnet.
+* **Mainnet:** Activate after stable testnet KPIs (see Test Plan).
+
+=== Rationale ===
+* Multi‑parent headers avoid excessive uncles and encode miner intent.
+* Explicit `blueScore`/`blueWork` in headers improve light‑client proofs and reduce recomputation during IBD.
+* Per‑algo targets maintain Avian’s dual‑algo character while allowing a unified virtual rate controller.
+* Keeping transaction commitments unchanged minimizes scope; GhostDAG is orthogonal to script and mempool logic.
+
+=== Backwards compatibility ===
+* Legacy nodes (pre‑AIP‑0007) will not recognize new headers; hence this is a **hard fork**.
+* Explorers/wallets can treat the virtual tip as “best block”. A compatibility shim can map virtual order height to a synthetic height for APIs.
+
+=== Reference implementation notes ===
+* Introduce a `DagManager` that maintains:
+  * Parent sets, anticone caches, k‑cluster determination
+  * Virtual chain state (tip, daaScore, blueScore/blueWork)
+  * Pruning‑point manager (Phase 2)
+* Header hashing and PoW must include all new fields and `algoId` discrimination.
+* Stratum/proxy: extend template RPC to include `parents[]` and `algoId`.
+
+=== Security considerations ===
+* Parameter _k_ trades throughput for tolerance to concurrency; too small reduces security, too large increases compute/memory cost.
+* DAA must be manipulation‑resistant under asymmetric network conditions and dual‑algo hash‑power shifts.
+* Pruning requires careful design to keep old data unnecessary yet prevent history attacks; activate pruning only after extensive testing.
+* Finality depth _F_ is a policy (not consensus) recommendation to wallets.
+
+=== Test plan / KPIs ===
+* **Simulation:** Vary latency models, hash power distributions, and _k_ to measure stale rate, blue ratio, and reorg statistics.
+* **Testnet metrics:** sustained orphan rate < 8%, average confirmation (< F) < 30 s under 30% latency skew; IBD time comparable to or better than today.
+* **Adversarial tests:** selfish mining, eclipse partitions, differential hash‑rate swings between algos.
+* **Interoperability:** Legacy RPC shims and explorer updates validated.
+
+=== Open questions ===
+* Final choice of (_k_, τ, W, F) for mainnet.
+* Per‑algo vs. joint DAA normalization constants.
+* Whether to commit merge‑set/ghostdag data into the header vs. coinbase in Phase 1.
+
+== Reference ==
+* Yonatan Sompolinsky, Aviv Zohar. “PHANTOM and GHOSTDAG” — DAG protocols for high-throughput PoW.
+* Kaspa project (ghostdag) — practical deployment details (informational).
+
+== Copyright ==
+This AIP is licensed under CC0-1.0 (public domain dedication).
