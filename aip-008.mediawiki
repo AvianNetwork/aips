@@ -27,7 +27,7 @@ This AIP defines on‑chain message formats, payout scripts, and an open audit p
 * **Provider:** a storage node offering capacity/availability for encrypted data.
 * **Renter:** a client paying for storage of their encrypted dataset.
 * **Dataset:** a file or append‑only log (e.g., CRDT for spreadsheets) encrypted client‑side.
-* **Epoch:** fixed billing/audit interval (e.g., 2,016 blocks ~ two weeks; implementation‑selected).
+* **Epoch:** fixed billing/audit interval (e.g., 20,160 blocks (≈ 7 days at 30s) ~ two weeks; implementation‑selected).
 * **Deal:** a contract (renter ↔ provider) covering one dataset for one or more epochs.
 * **Aggregator/Auditor:** off‑chain service that coordinates challenges and aggregates proofs (may be the renter early on; decentralizable later).
 * **Commitment:** a 32‑byte hash that binds to an off‑chain CBOR or JSON descriptor.
@@ -133,7 +133,7 @@ Providers store only ciphertext shards; keys never touch providers.
 * **Dataset container assets** MAY be used for human‑friendly ownership/discovery; the **CMT** commitments link versions to the container.
 
 === 7. Parameters (Suggested Defaults, Non‑Consensus) ===
-* Epoch length: implementation‑defined (e.g., 2,016 blocks).  
+* Epoch length: implementation‑defined (e.g., 20,160 blocks (≈ 7 days at 30s)).  
 * K challenges per epoch: ≥ 24 (configurable).  
 * Timeout `RELATIVE_BLOCKS`: ≥ 3× audit window.  
 * OP_RETURN payload budget: keep ≤ ~80 bytes where possible; prefer 32‑byte commitments + off‑chain descriptors.
