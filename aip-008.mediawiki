@@ -1,0 +1,183 @@
+= AIP-008: Service‑Collateral Storage Nodes (Hidden Data, Public Economics) =
+
+; AIP: 008
+; Title: Service‑Collateral Storage Nodes (Hidden Data, Public Economics)
+; Author: Craig Donnachie (editor), GPT‑5 Thinking (co-author)
+; Status: Draft
+; Type: Standards Track (Optional, Layer‑2/Service)
+; Created: 2025‑08‑28
+; Requires: —
+; Replaces: —
+; Discussions-To: (TBD)
+
+== Abstract ==
+This AIP specifies an **optional service layer** for Avian, called **Avian FlightVault**, that enables a market of storage providers to host **client‑side‑encrypted datasets** (e.g., spreadsheets) while keeping **all economic activity transparent on‑chain** and **all file contents hidden off‑chain**. Providers post **service collateral** (not consensus staking), register capabilities via compact on‑chain commitments, receive payments from renters under **2‑of‑2 escrow with CSV timeouts**, and prove availability via **challenge‑response proofs of storage** anchored to block randomness. No consensus rules, block subsidies, or fork choice are modified; the chain remains **pure PoW**.
+
+== Motivation ==
+Avian benefits from private data tools (encrypted spreadsheets, documents) with public, auditable economics:
+* **Privacy:** ciphertext only; nodes cannot read user data.
+* **Transparency:** provider collateral, deals, and payouts are visible via standard transactions.
+* **Pow purity:** no validator sets, no issuance changes, no block validity changes.
+* **Composability:** fits today’s Bitcoin‑style script (P2SH + CSV/CLTV) and OP_RETURN commitments.
+
+== Scope ==
+This AIP defines on‑chain message formats, payout scripts, and an open audit protocol. It does **not** mandate any specific off‑chain storage backend or explorer UX, and it **does not** introduce new consensus opcodes.
+
+== Definitions ==
+* **Provider:** a storage node offering capacity/availability for encrypted data.
+* **Renter:** a client paying for storage of their encrypted dataset.
+* **Dataset:** a file or append‑only log (e.g., CRDT for spreadsheets) encrypted client‑side.
+* **Epoch:** fixed billing/audit interval (e.g., 2,016 blocks ~ two weeks; implementation‑selected).
+* **Deal:** a contract (renter ↔ provider) covering one dataset for one or more epochs.
+* **Aggregator/Auditor:** off‑chain service that coordinates challenges and aggregates proofs (may be the renter early on; decentralizable later).
+* **Commitment:** a 32‑byte hash that binds to an off‑chain CBOR or JSON descriptor.
+
+== Design Goals ==
+# Keep Avian **pure PoW**; all storage logic must be optional and off‑chain.
+# On‑chain data **small & permanent** (commitments only).
+# Payments **enforceable** with current script (no forks).
+# **Provider sybil‑resistance** by economic skin‑in‑the‑game (service collateral).
+# **Key privacy:** providers never learn plaintext or file keys.
+
+== Non‑Goals ==
+* Replacing PoW or affecting block validity.
+* Forcing nodes to relay or store private blobs.
+* On‑chain decryption or content indexing.
+
+== High‑Level Flow ==
+# **Provider registration:** lock service collateral UTXO; post a registration commitment.
+# **Dataset preparation:** renter encrypts & shards the dataset; computes a Merkle root.
+# **Deal creation:** renter posts a deal commitment and funds an escrow UTXO paying the provider if audits pass.
+# **Auditing:** per epoch, challenges are derived from recent blockhashes; provider returns Merkle sub‑proofs off‑chain; aggregator anchors a compact batch result.
+# **Payout or timeout:** provider co‑signs the escrow spend to get paid; otherwise renter sweeps after CSV timeout.
+
+
+== Specification ==
+
+=== 1. On‑chain Commitments (OP_RETURN) ===
+All messages use a compact envelope:
+
+  *Magic (4B)* = 0x53544F52 ("STOR")  
+  *Version (1B)* = 0x01  
+  *Type (1B)* ∈ {0x01 REG, 0x02 DEAL, 0x03 BATCH, 0x04 CMT}  
+  *Payload (≤ 64B)* = fixed‑length fields or a 32‑byte commitment
+
+Payloads SHOULD fit in a single OP_RETURN output. If a larger descriptor is needed, only the **32‑byte commitment** MUST be on‑chain; the full descriptor is distributed off‑chain and referenced by hash.
+
+; Type 0x01 — REG (Provider Registration)
+: Fields (packed): provider_pubkey(33) | manifest_commit(32) | collateral_txid(32)
+: Semantics: declares a provider identity and points to a signed **Provider Manifest** (endpoint, region, capacity, pricing, qualifier assets).
+
+; Type 0x02 — DEAL (Deal Intent)
+: Fields: deal_id(16) | dataset_id(32) | provider_id(32) | terms_commit(32)
+: Semantics: anchors the renter’s intent to pay a provider for storing a dataset under terms defined in an off‑chain **Deal Terms** document (epoch length, challenge rate, price, penalties).
+
+; Type 0x03 — BATCH (Audit Batch Result)
+: Fields: deal_id(16) | epoch(u32) | result_commit(32)
+: Semantics: anchors the aggregator’s signed summary of which challenge indices passed/failed for an epoch.
+
+; Type 0x04 — CMT (Dataset Version Commit)
+: Fields: dataset_id(32) | version(u32) | root(32)
+: Semantics: anchors a new dataset version (e.g., spreadsheet checkpoint or CRDT snapshot).
+
+**Identifiers**  
+*provider_id* = HASH160(provider_pubkey).  
+*dataset_id* = SHA256(canonical Dataset Manifest, e.g., shards + erasure coding).  
+*deal_id* = 128‑bit random chosen by renter (collision‑resistant).
+
+=== 2. Service Collateral & Payout Script ===
+Providers lock collateral in a standard P2SH script that supports cooperative payout or renter refund after a relative timeout:
+
+<pre>
+OP_IF
+  2 &lt;P_provider&gt; &lt;P_renter&gt; 2 OP_CHECKMULTISIG    ; cooperative payout path
+OP_ELSE
+  &lt;RELATIVE_BLOCKS&gt; OP_CHECKSEQUENCEVERIFY OP_DROP ; renter timeout
+  &lt;P_renter&gt; OP_CHECKSIG
+OP_ENDIF
+</pre>
+
+* The **escrow UTXO** for each active epoch uses the same template (distinct UTXO per deal/epoch is RECOMMENDED).
+* RELATIVE_BLOCKS SHOULD exceed the audit window to prevent premature refunds.
+* Implementations MAY use CLTV variants for absolute time if preferred.
+
+=== 3. Dataset Encryption & Sharding (Off‑chain) ===
+* **Encryption:** AES‑256‑GCM(chunk), key **Kf** (random).  
+* **Key wrapping:** per authorized reader **Ri**, publish ECIES(ECDH,secp256k1) wrap **EncRi(Kf)**.  
+* **Erasure coding:** Reed–Solomon (e.g., k=6, m=3) to survive provider churn.  
+* **Manifest:** canonical structure (CBOR/JSON) containing shard list, sizes, RS parameters, and **Merkle root** over shard digests. The manifest hash defines **dataset_id**.
+
+Providers store only ciphertext shards; keys never touch providers.
+
+=== 4. Challenge–Response Audits ===
+**Challenge seed:**  
+: For epoch *e* of *deal_id*, define seed  
+: `seed_e = SHA256(blockhash(H) || deal_id || e)`  
+: where *H* is the last block height ≤ epoch_end.
+
+**Indices:**  
+: Derive K challenge indices `i_j = F(seed_e, j) mod N`, where *N* is shard count (or byte‑range selections). F is a stream‑cipher‑like PRF (e.g., HKDF‑Expand).
+
+**Provider proof:**  
+: For each `i_j`, provider returns `(digest(i_j), Merkle path(i_j))` with a signature under `P_provider` and an attestation of possession time.
+
+**Aggregator batch:**  
+: Verifies proofs off‑chain, forms a compact bitmap/summary, signs it, then posts **BATCH** with `result_commit = SHA256(summary)`.
+
+=== 5. Payout Logic ===
+* If **BATCH** indicates pass (over threshold T, e.g., ≥ 95%), the provider co‑signs the escrow UTXO to spend to their payout address.
+* If provider refuses or fails, renter spends the escrow UTXO after `RELATIVE_BLOCKS` via the timeout branch (“revenue slashing”). No global slashing or confiscation occurs.
+
+=== 6. Optional Asset Integration ===
+* **Qualifier/Restricted assets** MAY tag providers (e.g., `STOR.PROVIDER`) to indicate certification, region, or KYC tier.
+* **Dataset container assets** MAY be used for human‑friendly ownership/discovery; the **CMT** commitments link versions to the container.
+
+=== 7. Parameters (Suggested Defaults, Non‑Consensus) ===
+* Epoch length: implementation‑defined (e.g., 2,016 blocks).  
+* K challenges per epoch: ≥ 24 (configurable).  
+* Timeout `RELATIVE_BLOCKS`: ≥ 3× audit window.  
+* OP_RETURN payload budget: keep ≤ ~80 bytes where possible; prefer 32‑byte commitments + off‑chain descriptors.
+
+== Rationale ==
+* Preserves **PoW purity**—no validator set, no subsidy redirection, no block validity hooks.
+* Uses existing **script features** (P2SH + CSV/CLTV) for enforceability.
+* Keeps the chain **lean** by anchoring only commitments.
+* Provides **economic accountability** (collateral + visible payouts) without revealing private data.
+
+== Backwards Compatibility ==
+Fully compatible. Non‑participating nodes and wallets remain unaffected. Messages are standard transactions with OP_RETURN outputs and P2SH scripts.
+
+== Security Considerations ==
+* **Privacy:** ciphertext at rest; wrap keys to readers; rotate **Kf** per version. Metadata leakage (size/timing) can be mitigated via padding/batching.
+* **Availability:** use redundancy (RS coding, multi‑provider placement). Renter should monitor and rotate providers on poor performance.
+* **Sybil/Griefing:** require collateral; maintain public reputation (indexer tallies `REG/DEAL/BATCH` history).
+* **Collusion:** diversify auditors or use 2‑of‑3 aggregator keys; renters may verify independently.
+* **Key loss:** renters MUST back up master keys; providers never have decryption keys.
+* **DoS:** rate‑limit challenge volume; cap K per epoch in terms.
+* **Replay:** deal_id and epoch are bound into seeds; signatures cover timestamps and identifiers.
+
+== Reference Implementation (Non‑normative) ==
+* **CLI:** `avn-flightvault` — `put/get/list` for datasets; `deal open/close`; encrypts, shards, uploads; publishes OP_RETURNs; manages escrow UTXOs.
+* **Indexer:** `stor-indexer` — watches for `STOR` envelope; maintains provider registry and reputation; coordinates audits; publishes BATCH summaries.
+* **Explorer Extension:** provider pages (collateral, uptime, pass‑rate), dataset pages (versions via CMT), deal views (escrows & payouts).
+* **Libraries:** ECIES(secp256k1), AES‑GCM, Reed–Solomon, Merkle utilities, HKDF.
+
+== Operational Guidance ==
+* Start with a centralized aggregator (often the renter) and migrate to federated auditors.
+* Prefer deterministic fee policies and clearly published terms_commit artifacts (content‑addressed, e.g., IPFS CID of the off‑chain CBOR).
+
+== IANA‑style Registry (Informative) ==
+{| class="wikitable"
+! Type !! Name !! Purpose
+|-
+| 0x01 || REG || Provider registration
+|-
+| 0x02 || DEAL || Deal intent / anchor
+|-
+| 0x03 || BATCH || Aggregated audit result for an epoch
+|-
+| 0x04 || CMT || Dataset version/commit checkpoint
+|}
+
+== Copyright ==
+This AIP is licensed under the MIT License. Contributors certify they have the right to submit under this license.
